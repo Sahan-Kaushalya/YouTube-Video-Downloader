@@ -1,0 +1,5 @@
+yt-dlp
+customtkinter
+pillow
+requests
+pyinstaller
