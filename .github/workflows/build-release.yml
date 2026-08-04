@@ -1,0 +1,87 @@
+name: Build and Release
+
+# Push a version tag like v1.0.0 to trigger a build + release for both platforms.
+#   git tag v1.0.0
+#   git push origin v1.0.0
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:  # allows manual "Run workflow" from the Actions tab too
+
+permissions:
+  contents: write  # needed so the workflow can create a GitHub Release
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: YouTubeBundleDownloader-Windows
+            build_cmd: >
+              pyinstaller --noconfirm --onefile --windowed
+              --name YouTubeBundleDownloader
+              --collect-all customtkinter
+              youtube_bundle_downloader.py
+          - os: macos-latest
+            artifact_name: YouTubeBundleDownloader-macOS
+            build_cmd: >
+              pyinstaller --noconfirm --onefile --windowed
+              --name YouTubeBundleDownloader
+              --collect-all customtkinter
+              youtube_bundle_downloader.py
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install yt-dlp customtkinter pillow requests pyinstaller
+
+      - name: Build executable
+        run: ${{ matrix.build_cmd }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            dist/YouTubeBundleDownloader*
+            dist/YouTubeBundleDownloader.app
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+
+      - name: Zip macOS .app bundle (if present)
+        run: |
+          cd dist-artifacts/YouTubeBundleDownloader-macOS
+          if [ -d "YouTubeBundleDownloader.app" ]; then
+            zip -r YouTubeBundleDownloader-macOS.zip YouTubeBundleDownloader.app
+            rm -rf YouTubeBundleDownloader.app
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist-artifacts/YouTubeBundleDownloader-Windows/*
+            dist-artifacts/YouTubeBundleDownloader-macOS/*
+          generate_release_notes: true
